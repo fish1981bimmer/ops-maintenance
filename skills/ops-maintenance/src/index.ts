@@ -1,16 +1,17 @@
 /**
- * 运维助手 Skill 实现 (v2.0)
- * 
+ * 运维助手 Skill 实现 (v2.1)
+ *
  * 本模块提供运维检查功能，供 AI 助手调用
- * 
+ *
  * 主要改进：
- * - 使用ssh2库替代child_process.exec
+ * - 远程SSH命令使用ssh2库，提升性能和安全性
  * - 添加连接池管理
  * - 增强安全性（移除StrictHostKeyChecking=no）
  * - 添加重试机制和错误处理
  * - 添加审计日志
  * - 支持SFTP文件传输
  * - 添加并发控制
+ * - v2.1: 密码加密、命令白名单、内部命令安全
  */
 
 import { exec } from 'child_process'
@@ -151,16 +152,16 @@ export async function checkAllServersHealth(
       const startTime = Date.now()
       
       try {
-        // 并行执行多个检查
+        // 并行执行多个检查（使用简单命令，避免管道和重定向）
         const [load, mem, disk] = await Promise.all([
           pool.executeCommand(config, 'uptime'),
-          pool.executeCommand(config, 'free -h 2>/dev/null || echo "N/A"'),
-          pool.executeCommand(config, 'df -h / | tail -1 | awk \'{print $5}\'')
+          pool.executeCommand(config, 'free -h'),
+          pool.executeCommand(config, 'df -h /')
         ])
-        
-        // 解析磁盘使用率
-        const diskUsage = disk.stdout.includes('%') 
-          ? disk.stdout.match(/(\d+)%/)?.[1] || 'N/A' 
+
+        // 解析磁盘使用率（从df输出中提取）
+        const diskUsage = disk.stdout.includes('%')
+          ? disk.stdout.match(/(\d+)%/)?.[1] || 'N/A'
           : 'N/A'
         const isHealthy = parseInt(diskUsage) < 90
         

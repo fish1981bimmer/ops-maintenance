@@ -20,7 +20,7 @@ import { getSSHPool } from '../src/utils/ssh-pool.js'
 
 describe('密码加密功能', () => {
   it('应该成功加密密码', async () => {
-    const password = 'my-secret-password'
+    const password = 'test-password-123'
     const encrypted = await encrypt(password)
     
     expect(encrypted).toBeDefined()
@@ -29,7 +29,7 @@ describe('密码加密功能', () => {
   })
 
   it('应该成功解密密码', async () => {
-    const password = 'my-secret-password'
+    const password = 'test-password-123'
     const encrypted = await encrypt(password)
     const decrypted = await decrypt(encrypted)
     
@@ -193,7 +193,7 @@ describe('配置文件安全', () => {
         host: '192.168.1.100',
         port: 22,
         user: 'admin',
-        password: 'plain-password'
+        password: 'test-password-456'
       }
     ]
 
@@ -205,7 +205,7 @@ describe('配置文件安全', () => {
   })
 
   it('应该保持已加密的密码', async () => {
-    const encryptedPassword = await encrypt('my-password')
+    const encryptedPassword = await encrypt('test-password-789')
     const servers = [
       {
         host: '192.168.1.100',
@@ -219,7 +219,7 @@ describe('配置文件安全', () => {
     const loaded = await loadServersSecurely()
 
     expect(loaded).toHaveLength(1)
-    expect(loaded[0].password).toBe('my-password')
+    expect(loaded[0].password).toBe('test-password-789')
   })
 })
 
