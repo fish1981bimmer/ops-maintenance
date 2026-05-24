@@ -156,6 +156,42 @@ export class AuditLogger {
   }
 
   /**
+   * 查询日志(简化接口)
+   */
+  query(filter?: {
+    action?: string
+    status?: string
+    limit?: number
+  }): AuditLogEntry[] {
+    const logs = this.queryLogs({
+      operation: filter?.action,
+      status: filter?.status,
+    })
+    return logs.slice(-(filter?.limit || 20)).reverse()
+  }
+
+  /**
+   * 格式化日志为可读文本
+   */
+  formatLogs(logs: AuditLogEntry[]): string {
+    if (logs.length === 0) return '暂无审计日志'
+
+    const lines: string[] = []
+    lines.push('### 📋 审计日志\n')
+
+    for (const log of logs) {
+      const emoji = log.status === 'success' ? '✅' : log.status === 'failure' ? '❌' : '⚠️'
+      lines.push(`${emoji} [${log.timestamp}] ${log.operation} @ ${log.server} - ${log.status}`)
+      if (log.command) lines.push(`   命令: ${log.command}`)
+      if (log.error) lines.push(`   错误: ${log.error}`)
+      if (log.duration) lines.push(`   耗时: ${log.duration}ms`)
+      lines.push('')
+    }
+
+    return lines.join('\n')
+  }
+
+  /**
    * 获取统计信息
    */
   getStats(): {

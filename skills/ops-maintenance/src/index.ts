@@ -1,5 +1,5 @@
 /**
- * 运维助手 Skill 实现 (v2.1)
+ * 运维助手 Skill 实现 (v3.0)
  *
  * 本模块提供运维检查功能，供 AI 助手调用
  *
@@ -12,6 +12,7 @@
  * - 支持SFTP文件传输
  * - 添加并发控制
  * - v2.1: 密码加密、命令白名单、内部命令安全
+ * - v3.0: 告警通知(飞书/微信/邮件/Webhook)、定时巡检调度、巡检报告
  */
 
 import { exec } from 'child_process'
@@ -39,9 +40,68 @@ import {
   isEncrypted
 } from './utils/crypto.js'
 import {
-  validateCommand,
-  validateCommands
+ validateCommand,
+ validateCommands
 } from './utils/command-validator.js'
+import {
+ getAlertManager,
+ type AlertRule,
+ type NotifyChannel,
+ type NotifyConfig,
+ type AlertRecord,
+ DEFAULT_ALERT_RULES
+} from './utils/alert-manager.js'
+import {
+ getPatrolScheduler,
+ type PatrolJob,
+ type PatrolCheck,
+ type PatrolExecutor,
+ type PatrolResult,
+ DEFAULT_PATROL_JOBS
+} from './utils/patrol-scheduler.js'
+import {
+ getNetworkDiagnostics,
+ type PingResult,
+ type DnsResult,
+ type TraceResult,
+ type PortCheckResult,
+ type ConnectivityResult,
+} from './utils/network-diagnostics.js'
+import {
+ DockerManager,
+ ServiceManager,
+ type DockerContainer,
+ type DockerStats,
+ type DockerInspect,
+ type ServiceStatus,
+} from './utils/service-manager.js'
+import {
+ getHealthChecker,
+ formatHealthReport,
+ type HealthCheckResult,
+ type HealthReport,
+} from './utils/health-checker.js'
+import {
+ getSecurityAuditor,
+ type SecurityFinding,
+ type SecurityAuditor,
+} from './utils/security-auditor.js'
+import {
+ getSmartLogAnalyzer,
+ type LogEntry,
+ type LogAnalysisResult,
+ type LogAnomaly,
+} from './utils/smart-log-analyzer.js'
+import {
+ getConfigChangeTracker,
+ type ConfigChangeTracker,
+ type ChangeRecord,
+} from './utils/config-change-tracker.js'
+import {
+ getReportGenerator,
+ type OpsReport,
+ type ReportFormat,
+} from './utils/report-generator.js'
 
 const execAsync = promisify(exec)
 
@@ -791,5 +851,688 @@ export async function getAuditStats(): Promise<string> {
  * 清理资源
  */
 export async function cleanup(): Promise<void> {
-  await closeGlobalPool()
+ // 停止巡检调度器
+ const scheduler = getPatrolScheduler()
+ if (scheduler.running()) {
+   scheduler.stop()
+ }
+ await closeGlobalPool()
+}
+
+// ============================================================
+// v3.0 告警通知功能
+// ============================================================
+
+/**
+ * 配置告警通知渠道
+ */
+export async function configureAlertNotify(
+ channel: NotifyChannel,
+ config: any
+): Promise<string> {
+ const alertManager = getAlertManager()
+ alertManager.updateNotifyConfig(channel, config)
+ return `✅ 已更新 ${channel} 通知渠道配置`
+}
+
+/**
+ * 查看告警规则
+ */
+export async function listAlertRules(): Promise<string> {
+ const alertManager = getAlertManager()
+ const rules = alertManager.getRules()
+ 
+ const lines: string[] = []
+ lines.push('### 🚨 告警规则列表\n')
+ 
+ for (const rule of rules) {
+   const statusEmoji = rule.enabled ? '✅' : '❌'
+   const levelEmoji = { info: 'ℹ️', warning: '⚠️', critical: '🔴' }[rule.level]
+   lines.push(`${statusEmoji} ${levelEmoji} **${rule.name}** (\`${rule.id}\`)`)
+   lines.push(`   类型: ${rule.type} | 阈值: ${rule.threshold} | 间隔: ${rule.interval}s | 渠道: ${rule.channels.join(',')}`)
+   if (rule.description) {
+     lines.push(`   ${rule.description}`)
+   }
+   lines.push('')
+ }
+ 
+ return lines.join('\n')
+}
+
+/**
+ * 添加/修改告警规则
+ */
+export async function setAlertRule(rule: AlertRule): Promise<string> {
+ const alertManager = getAlertManager()
+ alertManager.upsertRule(rule)
+ return `✅ 告警规则已保存: ${rule.name} (${rule.id})`
+}
+
+/**
+ * 删除告警规则
+ */
+export async function deleteAlertRule(ruleId: string): Promise<string> {
+ const alertManager = getAlertManager()
+ const deleted = alertManager.removeRule(ruleId)
+ return deleted ? `✅ 告警规则已删除: ${ruleId}` : `❌ 告警规则不存在: ${ruleId}`
+}
+
+/**
+ * 启用/禁用告警规则
+ */
+export async function toggleAlertRule(ruleId: string, enabled: boolean): Promise<string> {
+ const alertManager = getAlertManager()
+ const toggled = alertManager.toggleRule(ruleId, enabled)
+ return toggled
+   ? `✅ 告警规则 ${ruleId} 已${enabled ? '启用' : '禁用'}`
+   : `❌ 告警规则不存在: ${ruleId}`
+}
+
+/**
+ * 查看活跃告警
+ */
+export async function listActiveAlerts(): Promise<string> {
+ const alertManager = getAlertManager()
+ const alerts = alertManager.getActiveAlerts()
+ const stats = alertManager.getAlertStats()
+ 
+ const lines: string[] = []
+ lines.push('### 🔔 活跃告警\n')
+ lines.push(`**总计**: ${stats.firing} 条活跃 | ${stats.silenced} 条静默 | ${stats.resolved} 条已恢复\n`)
+ 
+ if (alerts.length === 0) {
+   lines.push('当前无活跃告警 ✨')
+ } else {
+   for (const alert of alerts) {
+     const levelEmoji = { info: 'ℹ️', warning: '⚠️', critical: '🔴' }[alert.level]
+     lines.push(`${levelEmoji} **${alert.ruleName}** — ${alert.server}`)
+     lines.push(`   类型: ${alert.type} | 当前: ${alert.value} | 阈值: ${alert.threshold}`)
+     lines.push(`   触发时间: ${alert.firedAt} | 通知次数: ${alert.notifyCount}`)
+     lines.push('')
+   }
+ }
+ 
+ return lines.join('\n')
+}
+
+/**
+ * 查看告警统计
+ */
+export async function getAlertsStats(): Promise<string> {
+ const alertManager = getAlertManager()
+ const stats = alertManager.getAlertStats()
+ 
+ const lines: string[] = []
+ lines.push('### 📊 告警统计\n')
+ lines.push(`**总计**: ${stats.total} 条 | 🔴 触发 ${stats.firing} | ✅ 恢复 ${stats.resolved} | 🔇 静默 ${stats.silenced}\n`)
+ 
+ if (Object.keys(stats.byLevel).length > 0) {
+   lines.push('**按级别:**')
+   for (const [level, count] of Object.entries(stats.byLevel)) {
+     const emoji = { info: 'ℹ️', warning: '⚠️', critical: '🔴' }[level] || '❓'
+     lines.push(`- ${emoji} ${level}: ${count}`)
+   }
+ }
+ 
+ if (Object.keys(stats.byType).length > 0) {
+   lines.push('\n**按类型:**')
+   for (const [type, count] of Object.entries(stats.byType)) {
+     lines.push(`- ${type}: ${count}`)
+   }
+ }
+ 
+ if (Object.keys(stats.byServer).length > 0) {
+   lines.push('\n**按服务器:**')
+   for (const [server, count] of Object.entries(stats.byServer)) {
+     lines.push(`- ${server}: ${count}`)
+   }
+ }
+ 
+ return lines.join('\n')
+}
+
+/**
+ * 静默告警
+ */
+export async function silenceAlert(ruleId: string, server: string, durationMinutes: number = 60): Promise<string> {
+ const alertManager = getAlertManager()
+ const key = `${ruleId}:${server}`
+ const silenced = alertManager.silence(key, durationMinutes * 60)
+ return silenced
+   ? `🔇 告警已静默 ${durationMinutes} 分钟: ${ruleId} @ ${server}`
+   : `❌ 未找到活跃告警: ${ruleId} @ ${server}`
+}
+
+/**
+ * 清理旧告警
+ */
+export async function cleanupAlerts(daysOld: number = 7): Promise<string> {
+ const alertManager = getAlertManager()
+ const removed = alertManager.cleanup(daysOld)
+ return `🗑️ 已清理 ${removed} 条 ${daysOld} 天前的旧告警`
+}
+
+// ============================================================
+// v3.0 定时巡检功能
+// ============================================================
+
+/**
+ * 巡检执行器实现
+ */
+class OpsPatrolExecutor implements PatrolExecutor {
+ async getServerList(job: PatrolJob): Promise<string[]> {
+   const servers: string[] = ['localhost']
+   
+   // 如果任务指定了服务器，只检查指定的
+   if (job.servers?.length) {
+     return job.servers
+   }
+   
+   // 否则检查本地 + 所有配置的远程服务器
+   try {
+     const remoteServers = await loadServers()
+     if (job.tags?.length) {
+       const matched = remoteServers.filter(s => 
+         s.tags?.some(t => job.tags!.includes(t))
+       )
+       servers.push(...matched.map(s => s.name || s.host))
+     } else {
+       servers.push(...remoteServers.map(s => s.name || s.host))
+     }
+   } catch {
+     // 远程服务器列表为空也没关系
+   }
+   
+   return servers
+ }
+
+ async executeCheck(
+   server: string,
+   check: PatrolCheck
+ ): Promise<{
+   status: 'ok' | 'warning' | 'critical' | 'error'
+   value?: number
+   message: string
+   detail?: string
+   extra?: Record<string, any>
+ }> {
+   try {
+     const isLocal = server === 'localhost'
+     
+     switch (check.type) {
+       case 'health':
+         return this.checkHealth(isLocal, server)
+       case 'disk':
+         return this.checkDisk(isLocal, server)
+       case 'memory':
+         return this.checkMemory(isLocal, server)
+       case 'load':
+         return this.checkLoad(isLocal, server)
+       case 'cpu':
+         return this.checkCpu(isLocal, server)
+       case 'service':
+         return this.checkService(isLocal, server, check.params?.services || ['nginx', 'docker', 'sshd'])
+       default:
+         return { status: 'error', message: `不支持的检查类型: ${check.type}` }
+     }
+   } catch (error: any) {
+     return { status: 'error', message: error.message }
+   }
+ }
+
+ private async checkHealth(isLocal: boolean, server: string) {
+   try {
+     const output = isLocal
+       ? await runCommand('uptime')
+       : await runRemoteCommand({ host: server } as SSHConfig, 'uptime')
+     
+     // 解析负载
+     const loadMatch = output.match(/load averages?:\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i)
+       || output.match(/load average:\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/i)
+     
+     const load5 = loadMatch ? parseFloat(loadMatch[2]) : 0
+     const status = load5 > 10 ? 'critical' : load5 > 5 ? 'warning' : 'ok'
+     
+     return {
+       status,
+       value: load5,
+       message: `系统负载: ${load5}`,
+       detail: output.trim(),
+     }
+   } catch (error: any) {
+     return { status: 'error', value: 0, message: `健康检查失败: ${error.message}` }
+   }
+ }
+
+ private async checkDisk(isLocal: boolean, server: string) {
+   try {
+     const output = isLocal
+       ? await runCommand('df -h /')
+       : await runRemoteCommand({ host: server } as SSHConfig, 'df -h /')
+     
+     const usageMatch = output.match(/(\d+)%/)
+     const usage = usageMatch ? parseInt(usageMatch[1]) : 0
+     const status = usage > 90 ? 'critical' : usage > 80 ? 'warning' : 'ok'
+     
+     return {
+       status,
+       value: usage,
+       message: `磁盘使用率: ${usage}%`,
+       detail: output.trim(),
+     }
+   } catch (error: any) {
+     return { status: 'error', value: 0, message: `磁盘检查失败: ${error.message}` }
+   }
+ }
+
+ private async checkMemory(isLocal: boolean, server: string) {
+   try {
+     // macOS: vm_stat, Linux: free -m
+     const cmd = isLocal ? 'vm_stat | head -10' : 'free -m'
+     const output = isLocal
+       ? await runCommand(cmd)
+       : await runRemoteCommand({ host: server } as SSHConfig, cmd)
+     
+     let usage = 0
+     // Linux: free -m 解析
+     const memMatch = output.match(/Mem:\s+\d+\s+\d+\s+\d+/)
+     if (memMatch) {
+       const nums = memMatch[0].match(/\d+/g)
+       if (nums && nums.length >= 3) {
+         usage = Math.round((parseInt(nums[1]) / parseInt(nums[0])) * 100)
+       }
+     }
+     
+     const status = usage > 95 ? 'critical' : usage > 85 ? 'warning' : 'ok'
+     
+     return {
+       status,
+       value: usage,
+       message: `内存使用率: ${usage}%`,
+       detail: output.trim().substring(0, 200),
+     }
+   } catch (error: any) {
+     return { status: 'error', value: 0, message: `内存检查失败: ${error.message}` }
+   }
+ }
+
+ private async checkLoad(isLocal: boolean, server: string) {
+   try {
+     const output = isLocal
+       ? await runCommand('uptime')
+       : await runRemoteCommand({ host: server } as SSHConfig, 'uptime')
+     
+     const loadMatch = output.match(/load averages?:\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i)
+       || output.match(/load average:\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/i)
+     
+     const load5 = loadMatch ? parseFloat(loadMatch[2]) : 0
+     const status = load5 > 10 ? 'critical' : load5 > 5 ? 'warning' : 'ok'
+     
+     return {
+       status,
+       value: load5,
+       message: `5分钟负载: ${load5}`,
+       detail: output.trim(),
+     }
+   } catch (error: any) {
+     return { status: 'error', value: 0, message: `负载检查失败: ${error.message}` }
+   }
+ }
+
+ private async checkCpu(isLocal: boolean, server: string) {
+   try {
+     const cmd = isLocal
+       ? 'top -l 1 -n 0 | grep -E "CPU"'
+       : 'top -bn1 | grep "Cpu"'
+     const output = isLocal
+       ? await runCommand(cmd)
+       : await runRemoteCommand({ host: server } as SSHConfig, cmd)
+     
+     // 尝试解析CPU使用率
+     const cpuMatch = output.match(/(\d+(?:\.\d+)?)\s*%\s*(?:idle|IDLE)/i)
+     const idle = cpuMatch ? parseFloat(cpuMatch[1]) : 0
+     const usage = Math.round(100 - idle)
+     
+     const status = usage > 90 ? 'critical' : usage > 80 ? 'warning' : 'ok'
+     
+     return {
+       status,
+       value: usage,
+       message: `CPU使用率: ${usage}%`,
+       detail: output.trim().substring(0, 200),
+     }
+   } catch (error: any) {
+     return { status: 'error', value: 0, message: `CPU检查失败: ${error.message}` }
+   }
+ }
+
+ private async checkService(isLocal: boolean, server: string, services: string[]) {
+   const downServices: string[] = []
+   
+   for (const svc of services) {
+     try {
+       const cmd = isLocal
+         ? `pgrep -f "${svc}" > /dev/null && echo "running" || echo "stopped"`
+         : `systemctl is-active ${svc} 2>/dev/null || pgrep -f "${svc}" >/dev/null && echo "running" || echo "stopped"`
+       
+       const output = isLocal
+         ? await runCommand(cmd)
+         : await runRemoteCommand({ host: server } as SSHConfig, cmd)
+       
+       if (!output.includes('running') && !output.includes('active')) {
+         downServices.push(svc)
+       }
+     } catch {
+       downServices.push(svc)
+     }
+   }
+   
+   const value = services.length - downServices.length
+   const status = downServices.length > 0 ? (downServices.length >= services.length ? 'critical' : 'warning') : 'ok'
+   
+   return {
+     status,
+     value,
+     message: downServices.length > 0
+       ? `服务异常: ${downServices.join(', ')} (已停止)`
+       : `所有服务正常 (${services.length}个)`,
+     extra: { downServices },
+   }
+ }
+}
+
+/**
+ * 初始化巡检调度器
+ */
+export function initPatrolScheduler(): void {
+ const scheduler = getPatrolScheduler()
+ scheduler.setExecutor(new OpsPatrolExecutor())
+}
+
+/**
+ * 启动定时巡检
+ */
+export async function startPatrol(): Promise<string> {
+ initPatrolScheduler()
+ const scheduler = getPatrolScheduler()
+ scheduler.start()
+ return '✅ 定时巡检已启动'
+}
+
+/**
+ * 停止定时巡检
+ */
+export async function stopPatrol(): Promise<string> {
+ const scheduler = getPatrolScheduler()
+ scheduler.stop()
+ return '⏹️ 定时巡检已停止'
+}
+
+/**
+ * 查看巡检任务列表
+ */
+export async function listPatrolJobs(): Promise<string> {
+ const scheduler = getPatrolScheduler()
+ const jobs = scheduler.getJobs()
+ 
+ const lines: string[] = []
+ lines.push('### 🕐 巡检任务列表\n')
+ 
+ for (const job of jobs) {
+   const statusEmoji = job.enabled ? '✅' : '❌'
+   lines.push(`${statusEmoji} **${job.name}** (\`${job.id}\`)`)
+   lines.push(`   调度: ${job.schedule} | 检查项: ${job.checks.map(c => c.type).join(', ')}`)
+   if (job.lastRun) {
+     lines.push(`   上次执行: ${job.lastRun}`)
+   }
+   lines.push('')
+ }
+ 
+ return lines.join('\n')
+}
+
+/**
+ * 手动执行巡检
+ */
+export async function runPatrol(jobId?: string): Promise<string> {
+ initPatrolScheduler()
+ const scheduler = getPatrolScheduler()
+ 
+ let results: PatrolResult[]
+ if (jobId) {
+   results = await scheduler.runJobNow(jobId)
+ } else {
+   results = await scheduler.runAllNow()
+ }
+ 
+ const report = scheduler.generateReport(results)
+ return scheduler.formatReport(report)
+}
+
+/**
+ * 添加巡检任务
+ */
+export async function addPatrolJob(job: PatrolJob): Promise<string> {
+ const scheduler = getPatrolScheduler()
+ scheduler.upsertJob(job)
+ return `✅ 巡检任务已保存: ${job.name} (${job.id})`
+}
+
+/**
+ * 删除巡检任务
+ */
+export async function removePatrolJob(jobId: string): Promise<string> {
+ const scheduler = getPatrolScheduler()
+ const deleted = scheduler.removeJob(jobId)
+ return deleted ? `✅ 巡检任务已删除: ${jobId}` : `❌ 巡检任务不存在: ${jobId}`
+}
+
+/**
+ * 启用/禁用巡检任务
+ */
+export async function togglePatrolJob(jobId: string, enabled: boolean): Promise<string> {
+ const scheduler = getPatrolScheduler()
+ const toggled = scheduler.toggleJob(jobId, enabled)
+ return toggled
+   ? `✅ 巡检任务 ${jobId} 已${enabled ? '启用' : '禁用'}`
+   : `❌ 巡检任务不存在: ${jobId}`
+}
+
+/**
+ * 查看巡检报告列表
+ */
+export async function listPatrolReports(limit: number = 10): Promise<string> {
+ const scheduler = getPatrolScheduler()
+ const reports = scheduler.listReports(limit)
+ 
+ if (reports.length === 0) {
+   return '暂无巡检报告，请先执行一次巡检'
+ }
+ 
+ const lines: string[] = []
+ lines.push('### 📋 巡检报告列表\n')
+ for (const r of reports) {
+   lines.push(`- ${r.timestamp}`)
+ }
+ 
+ return lines.join('\n')
+}
+
+// ============================================================
+// v3.0 网络诊断功能
+// ============================================================
+
+/**
+ * Ping 测试
+ */
+export async function networkPing(host: string, count: number = 4): Promise<string> {
+ const diag = getNetworkDiagnostics()
+ const result = await diag.ping(host, count)
+ return diag.formatPingResult(result)
+}
+
+/**
+ * DNS 查询
+ */
+export async function networkDns(host: string, server?: string): Promise<string> {
+ const diag = getNetworkDiagnostics()
+ const result = await diag.dns(host, server)
+ return diag.formatDnsResult(result)
+}
+
+/**
+ * 路由追踪
+ */
+export async function networkTraceroute(host: string, maxHops: number = 20): Promise<string> {
+ const diag = getNetworkDiagnostics()
+ const result = await diag.traceroute(host, maxHops)
+ return diag.formatTraceResult(result)
+}
+
+/**
+ * MTR 测试 (自动降级为 traceroute)
+ */
+export async function networkMtr(host: string, count: number = 10): Promise<string> {
+ const diag = getNetworkDiagnostics()
+ const result = await diag.mtr(host, count)
+ return diag.formatTraceResult(result)
+}
+
+/**
+ * 端口连通性测试
+ */
+export async function networkCheckPort(host: string, port: number): Promise<string> {
+ const diag = getNetworkDiagnostics()
+ const result = await diag.checkPort(host, port)
+ return `### 🔌 端口 ${port} @ ${host}\n\n${result.open ? '✅ 开放' : '❌ 关闭'}\n${result.detail}`
+}
+
+/**
+ * 综合连通性测试
+ */
+export async function networkFullCheck(
+ host: string,
+ ports: number[] = [80, 443, 22]
+): Promise<string> {
+ const diag = getNetworkDiagnostics()
+ const result = await diag.fullCheck(host, ports)
+ return diag.formatConnectivityResult(result)
+}
+
+// ============================================================
+// v3.0 服务管理增强功能
+// ============================================================
+
+/**
+ * Docker 容器列表
+ */
+export async function dockerList(all: boolean = false, remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const docker = new DockerManager(15000, remoteExec)
+ const containers = await docker.listContainers(all)
+ return docker.formatContainerList(containers)
+}
+
+/**
+ * Docker 容器资源使用
+ */
+export async function dockerStats(container?: string, remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const docker = new DockerManager(15000, remoteExec)
+ const stats = await docker.getStats(container)
+ return docker.formatStats(stats)
+}
+
+/**
+ * Docker 容器详情
+ */
+export async function dockerInspect(nameOrId: string, remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const docker = new DockerManager(15000, remoteExec)
+ const info = await docker.inspectContainer(nameOrId)
+ return docker.formatInspect(info)
+}
+
+/**
+ * Docker 容器日志
+ */
+export async function dockerLogs(nameOrId: string, lines: number = 50, remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const docker = new DockerManager(15000, remoteExec)
+ const logs = await docker.getLogs(nameOrId, lines)
+ return `### 📋 容器日志: ${nameOrId} (最近${lines}行)\n\`\`\`\n${logs.substring(0, 5000)}\n\`\`\``
+}
+
+/**
+ * Docker 镜像列表
+ */
+export async function dockerImages(remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const docker = new DockerManager(15000, remoteExec)
+ const images = await docker.listImages()
+
+ if (images.length === 0) return '无镜像'
+
+ const lines: string[] = []
+ lines.push('### 📦 Docker 镜像\n')
+ lines.push('| 仓库 | 标签 | 大小 | ID |')
+ lines.push('|------|------|------|-----|')
+ for (const img of images) {
+   lines.push(`| ${img.repository} | ${img.tag} | ${img.size} | ${img.id} |`)
+ }
+ return lines.join('\n')
+}
+
+/**
+ * 服务状态 (systemd)
+ */
+export async function serviceStatus(serviceName: string, remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const svc = new ServiceManager(10000, remoteExec)
+ const status = await svc.getStatus(serviceName)
+ return svc.formatStatus(status)
+}
+
+/**
+ * 批量服务状态
+ */
+export async function serviceBatchStatus(services: string[], remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const svc = new ServiceManager(10000, remoteExec)
+ const statuses = await svc.batchStatus(services)
+ return svc.formatBatchStatus(statuses)
+}
+
+/**
+ * 服务日志 (journalctl)
+ */
+export async function serviceLogs(serviceName: string, lines: number = 50, since?: string, remoteConfig?: SSHConfig): Promise<string> {
+ const remoteExec = remoteConfig
+   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+   : undefined
+ const svc = new ServiceManager(10000, remoteExec)
+ const log = await svc.getLogs(serviceName, lines, since)
+
+ if (log.entries.length === 0) return `暂无 ${serviceName} 的日志`
+
+ const lines2: string[] = []
+ lines2.push(`### 📋 服务日志: ${serviceName} (最近${lines}行)\n`)
+ for (const entry of log.entries.slice(-30)) {
+   lines2.push(`[${entry.timestamp}] ${entry.message}`)
+ }
+ return lines2.join('\n')
 }

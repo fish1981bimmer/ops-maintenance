@@ -3,7 +3,32 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Semantic Versioning](https://semerv.org/spec/v2.0.0.html).
+
+## [3.0.0] - 2026-05-24
+
+### Added
+- **告警通知系统** - 多渠道告警（飞书/微信/邮件/Webhook/控制台）
+- 8种默认告警规则：磁盘(80%/90%)、内存(85%/95%)、负载(5/10)、CPU(80%)、服务宕机
+- 告警去重：同一规则+服务器不重复触发
+- 告警静默：指定时间内屏蔽重复告警
+- 自动恢复检测：阈值恢复后自动标记 resolved 并通知
+- 告警升级：按阈值从高到低优先触发最高级别
+- 告警持久化存储：~/.config/ops-maintenance/alerts.json
+- **定时巡检调度** - 按配置间隔自动执行运维检查
+- 2种默认巡检任务：基础健康巡检(5分钟)、服务状态巡检(1分钟)
+- 巡检报告自动生成（Markdown格式）
+- 告警与巡检联动：巡检结果自动评估告警规则
+- 巡检执行器接口（PatrolExecutor）：支持本地和远程服务器
+- alert-manager.ts: 告警管理器（300+ 行）
+- patrol-scheduler.ts: 巡检调度器（300+ 行）
+- 26个单元测试（alert-patrol.test.ts）
+- 18个新API函数：configureAlertNotify, listAlertRules, setAlertRule, deleteAlertRule, toggleAlertRule, listActiveAlerts, getAlertsStats, silenceAlert, cleanupAlerts, startPatrol, stopPatrol, listPatrolJobs, runPatrol, addPatrolJob, removePatrolJob, togglePatrolJob, listPatrolReports, initPatrolScheduler
+
+### Changed
+- 版本号升级到 3.0.0
+- 测试框架从 tsx 切换到 vitest
+- argumentHint 增加 alert、patrol 命令
 
 ## [2.1.0] - 2026-04-30
 
