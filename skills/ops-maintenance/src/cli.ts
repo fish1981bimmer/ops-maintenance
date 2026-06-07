@@ -244,32 +244,174 @@ configCmd
 // ============================================================
 
 program
-  .command('report')
-  .description('生成运维报告')
-  .option('-f, --format <type>', '输出格式(markdown|json|text)', 'markdown')
-  .option('--no-health', '跳过健康检查')
-  .option('--no-security', '跳过安全审计')
-  .option('--no-logs', '跳过日志分析')
-  .option('--no-config', '跳过配置变更')
-  .option('-t, --title <title>', '报告标题', '运维巡检报告')
-  .action(async (opts) => {
-    try {
-      const generator = getReportGenerator()
-      const report = await generator.generate({
-        format: opts.format as ReportFormat,
-        includeHealth: opts.health !== false,
-        includeSecurity: opts.security !== false,
-        includeLogs: opts.logs !== false,
-        includeConfig: opts.config !== false,
-        title: opts.title,
-      })
+ .command('report')
+ .description('生成运维报告')
+ .option('-f, --format <type>', '输出格式(markdown|json|text)', 'markdown')
+ .option('--no-health', '跳过健康检查')
+ .option('--no-security', '跳过安全审计')
+ .option('--no-logs', '跳过日志分析')
+ .option('--no-config', '跳过配置变更')
+ .option('-t, --title <title>', '报告标题', '运维巡检报告')
+ .action(async (opts) => {
+ try {
+ const generator = getReportGenerator()
+ const report = await generator.generate({
+ format: opts.format as ReportFormat,
+ includeHealth: opts.health !== false,
+ includeSecurity: opts.security !== false,
+ includeLogs: opts.logs !== false,
+ includeConfig: opts.config !== false,
+ title: opts.title,
+ })
 
-      console.log(generator.format(report, opts.format as ReportFormat))
-    } catch (error: any) {
-      console.error(`❌ 生成报告失败: ${error.message}`)
-      process.exit(1)
-    }
-  })
+ console.log(generator.format(report, opts.format as ReportFormat))
+ } catch (error: any) {
+ console.error(`❌ 生成报告失败: ${error.message}`)
+ process.exit(1)
+ }
+ })
+
+// ============================================================
+// docker-health 命令
+// ============================================================
+
+program
+ .command('docker-health')
+ .description('Docker 容器健康巡检')
+ .option('-c, --container <name>', '检查指定容器')
+ .option('--images', '只检查镜像更新')
+ .option('--max-restarts <n>', '最大重启次数阈值', '5')
+ .option('--max-image-age <days>', '镜像过期天数阈值', '90')
+ .option('--json', 'JSON格式输出')
+ .action(async (opts) => {
+ try {
+ const { DockerHealthChecker } = await import('./utils/docker-health-checker.js')
+ const checker = new DockerHealthChecker({
+ maxRestartCount: parseInt(opts.maxRestarts),
+ maxImageAgeDays: parseInt(opts.maxImageAge),
+ })
+
+ if (opts.images) {
+ const images = await checker.checkImageUpdates()
+ const old = images.filter(i => i.needsUpdate)
+ const fresh = images.filter(i => !i.needsUpdate)
+ if (opts.json) {
+ console.log(JSON.stringify({ old, fresh }, null, 2))
+ } else {
+ if (old.length > 0) {
+ console.log(`⚠️ ${old.length} 个镜像需要更新:`)
+ for (const img of old) {
+ console.log(`  [!] ${img.image} - ${img.daysOld}天前创建`)
+ }
+ }
+ console.log(`✅ ${fresh.length} 个镜像状态正常`)
+ }
+ return
+ }
+
+ if (opts.container) {
+ const result = await checker.inspectByName(opts.container)
+ if (!result) {
+ console.error(`❌ 未找到容器: ${opts.container}`)
+ process.exit(1)
+ }
+ if (opts.json) {
+ console.log(JSON.stringify(result, null, 2))
+ } else {
+ const mark = result.status === 'critical' ? '❌' : result.status === 'warning' ? '⚠️' : '✅'
+ console.log(`${mark} ${result.container} (${result.image}): ${result.status}`)
+ for (const issue of result.issues) {
+ const im = issue.severity === 'critical' ? '!!!' : ' ! '
+ console.log(`  [${im}] ${issue.type}: ${issue.message}`)
+ console.log(`       -> ${issue.suggestion}`)
+ }
+ }
+ return
+ }
+
+ const report = await checker.runFullInspection()
+ if (opts.json) {
+ console.log(JSON.stringify(report, null, 2))
+ } else {
+ console.log(checker.formatReport(report))
+ }
+ } catch (error: any) {
+ console.error(`❌ Docker健康巡检失败: ${error.message}`)
+ process.exit(1)
+ }
+ })
+
+// ============================================================
+// ssl 命令
+// ============================================================
+
+program
+ .command('ssl <domains...>')
+ .description('SSL证书监控 (域名列表)')
+ .option('-p, --port <n>', '指定端口', '443')
+ .option('--warn-days <n>', '提前N天告警', '30')
+ .option('--critical-days <n>', '提前N天严重告警', '7')
+ .option('--detail', '显示证书详情(单域名)')
+ .option('--json', 'JSON格式输出')
+ .action(async (domains, opts) => {
+ try {
+ const { SSLMonitor } = await import('./utils/ssl-monitor.js')
+ const monitor = new SSLMonitor({
+ domains,
+ warnDays: parseInt(opts.warnDays),
+ criticalDays: parseInt(opts.criticalDays),
+ port: parseInt(opts.port),
+ })
+
+ if (opts.detail && domains.length === 1) {
+ const domain = domains[0]
+ const result = await monitor.checkDomain(domain, parseInt(opts.port))
+
+ if (result.status === 'error') {
+ console.error(`❌ ${domain} - ${result.error || '连接失败'}`)
+ process.exit(1)
+ }
+
+ const cert = result.cert
+ if (!cert) {
+ console.error(`❌ ${domain} - 无法获取证书信息`)
+ process.exit(1)
+ }
+
+ if (opts.json) {
+ console.log(JSON.stringify(result, null, 2))
+ } else {
+ const mark = cert.status === 'valid' ? '✅' : cert.status === 'expiring-soon' ? '⚠️' : '❌'
+ console.log(`${mark} SSL 证书详情: ${domain}:${opts.port}`)
+ console.log(`  域名: ${cert.subject}`)
+ console.log(`  颁发者: ${cert.issuer}`)
+ console.log(`  有效期: ${cert.validFrom} ~ ${cert.validTo}`)
+ console.log(`  剩余: ${cert.daysRemaining} 天`)
+ console.log(`  协议: ${cert.protocol}`)
+ if (cert.sanDomains.length > 0) {
+ console.log(`  SAN: ${cert.sanDomains.join(', ')}`)
+ }
+ if (result.chainIssues.length > 0) {
+ console.log(`  ⚠️ 链路问题:`)
+ for (const ci of result.chainIssues) {
+ console.log(`    - ${ci}`)
+ }
+ }
+ }
+ return
+ }
+
+ const report = await monitor.checkDomains(domains)
+ if (opts.json) {
+ console.log(JSON.stringify(report, null, 2))
+ } else {
+ console.log(monitor.formatReport(report))
+ }
+ } catch (error: any) {
+ console.error(`❌ SSL检查失败: ${error.message}`)
+ process.exit(1)
+ }
+ })
 
 // ============================================================
 // 启动

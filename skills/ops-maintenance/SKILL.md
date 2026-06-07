@@ -1,18 +1,36 @@
 ---
 name: ops-maintenance
-description: 运维助手 v3.0 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检
+version: 3.1.0
+description: 运维助手 v3.1 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控
 userInvocable: true
-argumentHint: <health|security|logs|config|report|perf|ports|process|disk|cluster|alert|patrol|add-server|remove-server|upload|download|list|audit> [args]
+argumentHint: <health|security|logs|config|report|perf|ports|process|disk|cluster|alert|patrol|docker-health|ssl|add-server|remove-server|upload|download|list|audit> [args]
 allowedTools:
  - Bash
  - Read
 ---
 
-# 运维助手 (ops-maintenance) v3.0
+# 运维助手 (ops-maintenance) v3.1
 
-专业的运维助手，支持单服务器和多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检。
+专业的运维助手，支持单服务器和多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控。
 
-## v3.0 新功能
+## v3.1 新功能
+
+### Docker 容器健康巡检
+- **全面巡检**: 自动检查所有容器的健康状况
+- **重启检测**: 检测容器重启次数超限，识别启动即崩溃的僵尸容器
+- **OOM Kill检测**: 识别因内存不足被Kill的容器
+- **健康检查失败**: 检测Docker HEALTHCHECK失败
+- **资源超限**: CPU/内存使用率超阈值告警(70%/75%警告, 90%/90%严重)
+- **镜像过期**: 检测超过90天未更新的镜像
+- **单容器检查**: 支持指定容器名深度检查
+
+### SSL 证书监控
+- **批量域名检查**: 支持同时检查多个域名的SSL证书
+- **过期告警**: 默认30天前告警，7天前严重告警
+- **证书详情**: 显示颁发者、有效期、SAN域名、协议版本
+- **链路检查**: 检测SAN不匹配、不安全协议(TLSv1.0/1.1)
+- **配置文件支持**: 从 ~/.config/ops-maintenance/ssl-domains.json 加载域名
+- **备用方案**: openssl命令作为Node.js TLS的备用检测方式
 
 ### 安全审计系统
 - **自动安全扫描**: SSH配置、防火墙状态、文件权限、Docker安全、内核参数
@@ -56,7 +74,7 @@ allowedTools:
 - **手动触发**: 随时手动执行单个或全部巡检任务
 - **告警联动**: 巡检结果自动评估告警规则并触发通知
 
-## CLI 命令 (v3.0)
+## CLI 命令 (v3.1)
 
 ```
 ops health              # 系统健康检查
@@ -72,6 +90,15 @@ ops config history      # 查看变更历史
 ops report              # 生成综合运维报告
 ops report -f json      # JSON格式报告
 ops audit               # 查看审计日志
+ops docker-health       # Docker容器健康巡检(全部)
+ops docker-health -c nginx  # 检查指定容器
+ops docker-health --images  # 只检查镜像更新
+ops docker-health --json    # JSON格式输出
+ops ssl example.com     # 检查域名SSL证书
+ops ssl a.com b.com c.com   # 批量检查
+ops ssl example.com --detail  # 证书详情
+ops ssl example.com --port 8443  # 指定端口
+ops ssl example.com --warn-days 14  # 14天内告警
 ```
 
 ## 告警命令

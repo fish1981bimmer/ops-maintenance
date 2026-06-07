@@ -3,13 +3,20 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { existsSync, unlinkSync, readdirSync, rmSync } from 'fs'
+import { join } from 'path'
 import {
-  AlertManager,
-  DEFAULT_ALERT_RULES,
-  resetAlertManager,
-  type AlertRule,
-  type AlertLevel,
+ AlertManager,
+ DEFAULT_ALERT_RULES,
+ resetAlertManager,
+ type AlertRule,
+ type AlertLevel,
 } from '../src/utils/alert-manager.js'
+
+// 测试隔离：清除持久化文件，防止历史数据污染
+const configDir = join(process.env.HOME || '~', '.config', 'ops-maintenance')
+const alertFile = join(configDir, 'alerts.json')
+const configFile = join(configDir, 'alert-config.json')
 import {
   PatrolScheduler,
   DEFAULT_PATROL_JOBS,
@@ -27,13 +34,24 @@ describe('AlertManager', () => {
   let manager: AlertManager
 
   beforeEach(() => {
-    resetAlertManager()
-    manager = new AlertManager({
-      rules: [...DEFAULT_ALERT_RULES],
-      notify: {},
-      silencePeriod: 60,
-      repeatInterval: 60,
-    })
+  // 清除持久化文件，确保测试隔离
+  for (const f of [alertFile, configFile]) {
+  if (existsSync(f)) { try { unlinkSync(f) } catch {} }
+  }
+  resetAlertManager()
+  manager = new AlertManager({
+  rules: [...DEFAULT_ALERT_RULES],
+  notify: {},
+  silencePeriod: 60,
+  repeatInterval: 60,
+  })
+  })
+
+  afterEach(() => {
+  // 清除测试产生的持久化文件
+  for (const f of [alertFile, configFile]) {
+  if (existsSync(f)) { try { unlinkSync(f) } catch {} }
+  }
   })
 
   it('应正确加载默认告警规则', () => {
@@ -278,8 +296,20 @@ describe('PatrolScheduler', () => {
 // ============================================================
 
 describe('告警与巡检联动', () => {
-  it('巡检中超过阈值应触发告警', async () => {
-    resetAlertManager()
+ beforeEach(() => {
+ for (const f of [alertFile, configFile]) {
+ if (existsSync(f)) { try { unlinkSync(f) } catch {} }
+ }
+ })
+
+ afterEach(() => {
+ for (const f of [alertFile, configFile]) {
+ if (existsSync(f)) { try { unlinkSync(f) } catch {} }
+ }
+ })
+
+ it('巡检中超过阈值应触发告警', async () => {
+ resetAlertManager()
     const alertManager = new AlertManager({
       rules: DEFAULT_ALERT_RULES.filter(r => r.type === 'disk'),
       notify: {},

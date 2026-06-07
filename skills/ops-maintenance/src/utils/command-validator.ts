@@ -24,9 +24,9 @@ const ALLOWED_COMMANDS = [
   /^id$/,
 
   // 日志查看
-  /^tail\s+(-n\s+\d+)?\s+.*\.log$/,
+  /^tail\s+(-n\s+\d+)?\s+.*$/,
   /^tail\s+(-n\s+\d+)?\s+.*\.log\s*\|\s*grep\s+.*$/,
-  /^grep\s+.*\s+.*\.log$/,
+  /^grep\s+.*\s+.*$/,
   /^cat\s+.*\.log$/,
   /^less\s+.*\.log$/,
   /^journalctl\s+.*$/,
@@ -166,49 +166,54 @@ const DANGEROUS_COMMANDS = [
  * @returns 验证结果和错误信息
  */
 export function validateCommand(command: string): { safe: boolean; reason?: string } {
-  const trimmedCommand = command.trim()
+ const trimmedCommand = command.trim()
 
-  // 检查是否为空
-  if (!trimmedCommand) {
-    return { safe: false, reason: '命令不能为空' }
-  }
+ // 检查是否为空
+ if (!trimmedCommand) {
+ return { safe: false, reason: '命令不能为空' }
+ }
 
-  // 检查危险命令
-  for (const pattern of DANGEROUS_COMMANDS) {
-    if (pattern.test(trimmedCommand)) {
-      return { safe: false, reason: `命令包含危险操作: ${trimmedCommand}` }
-    }
-  }
+ // 检查是否包含注释字符（可能隐藏恶意命令）
+ if (trimmedCommand.includes('#')) {
+ return { safe: false, reason: '命令包含注释字符，可能绕过安全检查' }
+ }
 
-  // 检查是否在白名单中
-  for (const pattern of ALLOWED_COMMANDS) {
-    if (pattern.test(trimmedCommand)) {
-      return { safe: true }
-    }
-  }
+ // 检查是否包含管道和重定向（可能绕过白名单）
+ if (trimmedCommand.includes('|') || trimmedCommand.includes('>') || trimmedCommand.includes('<')) {
+ return { safe: false, reason: '命令包含管道或重定向，可能绕过安全检查' }
+ }
 
-  // 检查是否包含管道和重定向（可能绕过白名单）
-  if (trimmedCommand.includes('|') || trimmedCommand.includes('>') || trimmedCommand.includes('<')) {
-    return { safe: false, reason: '命令包含管道或重定向，可能绕过安全检查' }
-  }
+ // 检查是否包含命令替换
+ if (trimmedCommand.includes('$(') || trimmedCommand.includes('`')) {
+ return { safe: false, reason: '命令包含命令替换，可能绕过安全检查' }
+ }
 
-  // 检查是否包含命令替换
-  if (trimmedCommand.includes('$(') || trimmedCommand.includes('`')) {
-    return { safe: false, reason: '命令包含命令替换，可能绕过安全检查' }
-  }
+ // 检查是否包含分号（可能执行多个命令）
+ if (trimmedCommand.includes(';')) {
+ return { safe: false, reason: '命令包含分号，可能执行多个命令' }
+ }
 
-  // 检查是否包含分号（可能执行多个命令）
-  if (trimmedCommand.includes(';')) {
-    return { safe: false, reason: '命令包含分号，可能执行多个命令' }
-  }
+ // 检查是否包含&&或||
+ if (trimmedCommand.includes('&&') || trimmedCommand.includes('||')) {
+ return { safe: false, reason: '命令包含逻辑运算符，可能执行多个命令' }
+ }
 
-  // 检查是否包含&&或||
-  if (trimmedCommand.includes('&&') || trimmedCommand.includes('||')) {
-    return { safe: false, reason: '命令包含逻辑运算符，可能执行多个命令' }
-  }
+ // 检查危险命令
+ for (const pattern of DANGEROUS_COMMANDS) {
+ if (pattern.test(trimmedCommand)) {
+ return { safe: false, reason: `命令包含危险操作: ${trimmedCommand}` }
+ }
+ }
 
-  // 不在白名单中，拒绝执行
-  return { safe: false, reason: `命令不在允许的白名单中: ${trimmedCommand}` }
+ // 检查是否在白名单中
+ for (const pattern of ALLOWED_COMMANDS) {
+ if (pattern.test(trimmedCommand)) {
+ return { safe: true }
+ }
+ }
+
+ // 不在白名单中，拒绝执行
+ return { safe: false, reason: `命令不在允许的白名单中: ${trimmedCommand}` }
 }
 
 /**

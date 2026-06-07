@@ -98,10 +98,23 @@ import {
  type ChangeRecord,
 } from './utils/config-change-tracker.js'
 import {
- getReportGenerator,
- type OpsReport,
- type ReportFormat,
+  getReportGenerator,
+  type OpsReport,
+  type ReportFormat,
 } from './utils/report-generator.js'
+import {
+  DockerHealthChecker,
+  type DockerHealthReport,
+  type ContainerCheckResult,
+  type ContainerIssue,
+} from './utils/docker-health-checker.js'
+import {
+  SSLMonitor,
+  type SSLMonitorReport,
+  type SSLCheckResult,
+  type CertInfo,
+  type SSLMonitorConfig,
+} from './utils/ssl-monitor.js'
 
 const execAsync = promisify(exec)
 
@@ -1522,8 +1535,8 @@ export async function serviceBatchStatus(services: string[], remoteConfig?: SSHC
  */
 export async function serviceLogs(serviceName: string, lines: number = 50, since?: string, remoteConfig?: SSHConfig): Promise<string> {
  const remoteExec = remoteConfig
-   ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
-   : undefined
+ ? (cmd: string) => runRemoteCommand(remoteConfig, cmd)
+ : undefined
  const svc = new ServiceManager(10000, remoteExec)
  const log = await svc.getLogs(serviceName, lines, since)
 
@@ -1532,7 +1545,136 @@ export async function serviceLogs(serviceName: string, lines: number = 50, since
  const lines2: string[] = []
  lines2.push(`### 📋 服务日志: ${serviceName} (最近${lines}行)\n`)
  for (const entry of log.entries.slice(-30)) {
-   lines2.push(`[${entry.timestamp}] ${entry.message}`)
+ lines2.push(`[${entry.timestamp}] ${entry.message}`)
  }
  return lines2.join('\n')
+}
+
+// ============================================================
+// Docker 容器健康巡检
+// ============================================================
+
+/**
+ * Docker 容器健康巡检
+ */
+export async function dockerHealthCheck(containerName?: string): Promise<string> {
+ const checker = new DockerHealthChecker()
+
+ if (containerName) {
+ const result = await checker.inspectByName(containerName)
+ if (!result) return `未找到容器: ${containerName}`
+
+ const lines: string[] = []
+ lines.push(`容器: ${result.container} (${result.image})`)
+ lines.push(`状态: ${result.status}`)
+ if (result.issues.length === 0) {
+ lines.push('✅ 无问题')
+ } else {
+ for (const issue of result.issues) {
+ const mark = issue.severity === 'critical' ? '!!!' : issue.severity === 'warning' ? ' ! ' : '   '
+ lines.push(`[${mark}] ${issue.type}: ${issue.message}`)
+ lines.push(`     -> ${issue.suggestion}`)
+ }
+ }
+ return lines.join('\n')
+ }
+
+ const report = await checker.runFullInspection()
+ return checker.formatReport(report)
+}
+
+/**
+ * Docker 镜像更新检查
+ */
+export async function dockerImageCheck(): Promise<string> {
+ const checker = new DockerHealthChecker()
+ const images = await checker.checkImageUpdates()
+
+ if (images.length === 0) return '无镜像或Docker不可用'
+
+ const lines: string[] = []
+ lines.push('### 📦 镜像更新检查\n')
+
+ const oldImages = images.filter(i => i.needsUpdate)
+ const freshImages = images.filter(i => !i.needsUpdate)
+
+ if (oldImages.length > 0) {
+ lines.push(`**${oldImages.length} 个镜像需要更新:**\n`)
+ for (const img of oldImages) {
+ lines.push(`  [!] ${img.image} - ${img.daysOld}天前创建 (${img.sizeMb}MB)`)
+ lines.push(`      docker pull ${img.image}`)
+ }
+ }
+
+ lines.push(`\n**${freshImages.length} 个镜像状态正常**`)
+ return lines.join('\n')
+}
+
+// ============================================================
+// SSL 证书监控
+// ============================================================
+
+/**
+ * SSL 证书检查
+ */
+export async function sslCheck(domains: string[], options: {
+ warnDays?: number
+ criticalDays?: number
+ port?: number
+} = {}): Promise<string> {
+ if (domains.length === 0) {
+ // 尝试从配置文件加载
+ const configPath = join(process.env.HOME || '~', '.config', 'ops-maintenance', 'ssl-domains.json')
+ const loadedDomains = SSLMonitor.loadDomainsFromConfig(configPath)
+ if (loadedDomains.length === 0) {
+ return '未指定域名。用法: ops ssl example.com [domain2.com ...]'
+ }
+ domains = loadedDomains
+ }
+
+ const monitor = new SSLMonitor({
+ domains,
+ warnDays: options.warnDays || 30,
+ criticalDays: options.criticalDays || 7,
+ ports: options.port ? Object.fromEntries(domains.map(d => [d, options.port!])) : undefined
+ })
+
+ const report = await monitor.checkDomains(domains)
+ return monitor.formatReport(report)
+}
+
+/**
+ * SSL 证书详情
+ */
+export async function sslDetail(domain: string, port: number = 443): Promise<string> {
+ const monitor = new SSLMonitor()
+ const result = await monitor.checkDomain(domain, port)
+
+ if (result.status === 'error') {
+ return `❌ ${domain}:${port} - ${result.error || '连接失败'}`
+ }
+
+ const cert = result.cert
+ if (!cert) return `❌ ${domain}:${port} - 无法获取证书信息`
+
+ const lines: string[] = []
+ lines.push(`### 🔐 SSL 证书详情: ${domain}:${port}\n`)
+ lines.push(`状态: ${cert.status === 'valid' ? '✅ 有效' : cert.status === 'expiring-soon' ? '⚠️ 即将过期' : '❌ 已过期'}`)
+ lines.push(`域名: ${cert.subject}`)
+ lines.push(`颁发者: ${cert.issuer}`)
+ lines.push(`有效期: ${cert.validFrom} ~ ${cert.validTo}`)
+ lines.push(`剩余天数: ${cert.daysRemaining} 天`)
+ lines.push(`协议: ${cert.protocol}`)
+ if (cert.fingerprint) lines.push(`指纹: ${cert.fingerprint}`)
+ if (cert.sanDomains.length > 0) {
+ lines.push(`SAN域名: ${cert.sanDomains.join(', ')}`)
+ }
+ if (result.chainIssues.length > 0) {
+ lines.push(`\n⚠️ 链路问题:`)
+ for (const ci of result.chainIssues) {
+ lines.push(`  - ${ci}`)
+ }
+ }
+
+ return lines.join('\n')
 }
