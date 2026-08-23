@@ -1,6 +1,6 @@
 {
   "name": "ops-maintenance",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "\u8fd0\u7ef4\u52a9\u624b v3.1 - \u652f\u6301\u672c\u5730\u3001\u8fdc\u7a0b\u3001\u591a\u670d\u52a1\u5668\u96c6\u7fa4\u76d1\u63a7\u3001\u544a\u8b66\u901a\u77e5\u3001\u5b9a\u65f6\u5de1\u68c0\u3001Docker\u5bb9\u5668\u5065\u5eb7\u5de1\u68c0\u3001SSL\u8bc1\u4e66\u76d1\u63a7",
   "main": "src/index.ts",
   "bin": {
