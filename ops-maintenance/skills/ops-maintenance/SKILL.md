@@ -1,7 +1,7 @@
 ---
 name: ops-maintenance
 version: 3.3.0
-description: 运维助手 v3.2 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控
+description: 运维助手 v3.3 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控
 userInvocable: true
 argumentHint: <health|security|logs|config|report|perf|ports|process|disk|cluster|alert|patrol|docker-health|ssl|add-server|remove-server|upload|download|list|audit> [args]
 allowedTools:
@@ -128,7 +128,7 @@ ops alert notify slack '{"webhookUrl":"https://hooks.slack.com/services/xxx","ch
 ops alert notify dingtalk '{"webhookUrl":"https://oapi.dingtalk.com/robot/send?access_token=xxx"}'
 ```
 
-## CLI 命令 (v3.2)
+## CLI 命令 (v3.3)
 
 ```
 ops health              # 系统健康检查
