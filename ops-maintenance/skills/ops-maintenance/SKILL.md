@@ -1,6 +1,6 @@
 ---
 name: ops-maintenance
-version: 3.2.6
+version: 3.2.7
 description: 运维助手 v3.2 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控
 userInvocable: true
 argumentHint: <health|security|logs|config|report|perf|ports|process|disk|cluster|alert|patrol|docker-health|ssl|add-server|remove-server|upload|download|list|audit> [args]
@@ -9,7 +9,7 @@ allowedTools:
  - Read
 ---
 
-# 运维助手 (ops-maintenance) v3.2.6
+# 运维助手 (ops-maintenance) v3.2.7
 
 专业的运维助手，支持单服务器和多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控。
 
