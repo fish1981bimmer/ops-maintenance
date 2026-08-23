@@ -308,7 +308,6 @@ export class SSLMonitor {
    */
   static loadDomainsFromConfig(configPath: string): string[] {
     try {
-      import { readFileSync } from 'fs'
       const content = fs.readFileSync(configPath, 'utf-8')
       const config = JSON.parse(content)
       return Array.isArray(config.domains) ? config.domains : []

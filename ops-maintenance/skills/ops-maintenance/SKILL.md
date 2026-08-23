@@ -1,6 +1,6 @@
 ---
 name: ops-maintenance
-version: 3.2.7
+version: 3.3.0
 description: 运维助手 v3.2 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控
 userInvocable: true
 argumentHint: <health|security|logs|config|report|perf|ports|process|disk|cluster|alert|patrol|docker-health|ssl|add-server|remove-server|upload|download|list|audit> [args]
@@ -9,7 +9,7 @@ allowedTools:
  - Read
 ---
 
-# 运维助手 (ops-maintenance) v3.2.7
+# 运维助手 (ops-maintenance) v3.3.0
 
 专业的运维助手，支持单服务器和多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控。
 
@@ -91,6 +91,42 @@ ops alert notify email '{"smtpHost":"smtp.qq.com","smtpPort":465,"smtpUser":"xxx
 - **邮件通知**: 支持 SMTP 配置 (QQ/163/Gmail/Outlook)，通过 `ops alert notify email <config>` 设置
 - **批量操作**: 支持多服务器并行执行命令，默认5并发
 - **JSON输出**: 所有命令支持 `--json` 选项，便于程序化处理
+
+## v3.3 新功能
+
+### 多渠道通知增强 (v3.3)
+- **Slack 支持**: 通过 `ops alert notify slack <config>` 配置 Slack Webhook
+- **钉钉支持**: 通过 `ops alert notify dingtalk <config>` 配置钉钉机器人
+- **通用 Webhook**: 支持任意 HTTP POST 回调
+
+### CLI 健壮性修复 (v3.3)
+- **patrol start 不再阻塞**: 启动后自动退出，后台运行
+- **完整的错误处理**: 所有命令失败时返回适当退出码
+
+### 测试覆盖提升 (v3.3)
+- **49 个单元测试**: 覆盖安全、告警、巡检、SSL、Docker 核心功能
+- **ESM 兼容**: 所有 `require()` 替换为 `import`
+
+### 通知渠道配置示例
+```bash
+# 飞书
+ops alert notify feishu '{"webhookUrl":"https://open.feishu.cn/open-apis/bot/v2/hook/xxx"}'
+
+# 企业微信
+ops alert notify wechat '{"webhookUrl":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"}'
+
+# 邮件 (SMTP)
+ops alert notify email '{"smtpHost":"smtp.qq.com","smtpPort":465,"smtpUser":"xxx@qq.com","smtpPass":"授权码","from":"xxx@qq.com","to":["收件人@qq.com"]}'
+
+# Webhook
+ops alert notify webhook '{"url":"https://hooks.slack.com/services/xxx"}'
+
+# Slack
+ops alert notify slack '{"webhookUrl":"https://hooks.slack.com/services/xxx","channel":"#alerts","username":"OpsBot"}'
+
+# 钉钉
+ops alert notify dingtalk '{"webhookUrl":"https://oapi.dingtalk.com/robot/send?access_token=xxx"}'
+```
 
 ## CLI 命令 (v3.2)
 

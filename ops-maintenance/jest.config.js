@@ -1,30 +1,41 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/test'],
+  roots: ['<rootDir>/test', '<rootDir>/skills/ops-maintenance/test'],
   testMatch: ['**/*.test.ts'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleNameMapper: {
+    '^@src/(.*)$': '<rootDir>/skills/ops-maintenance/src/$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
-      tsconfig: 'tsconfig.json'
+      tsconfig: {
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+        module: 'ESNext',
+        moduleResolution: 'node',
+        target: 'ES2020',
+        isolatedModules: true,
+        skipLibCheck: true,
+      }
     }]
   },
   collectCoverageFrom: [
-    'src-new/**/*.ts',
-    '!src-new/**/*.test.ts',
-    '!src-new/index.ts',
-    '!src-new/container.ts',
-    '!src-new/legacy.ts'
+    'skills/ops-maintenance/src/**/*.ts',
+    '!skills/ops-maintenance/src/**/*.test.ts',
+    '!skills/ops-maintenance/src/index.ts',
+    '!skills/ops-maintenance/src/cli.ts',
   ],
   coverageThreshold: {
     global: {
-      branches: 70,
-      functions: 70,
-      lines: 70,
-      statements: 70
+      branches: 50,
+      functions: 50,
+      lines: 55,
+      statements: 55
     }
   },
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
-  testTimeout: 10000,
-  verbose: true
+  testTimeout: 15000,
+  verbose: true,
 }

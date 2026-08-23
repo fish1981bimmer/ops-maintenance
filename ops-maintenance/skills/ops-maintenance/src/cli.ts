@@ -585,8 +585,10 @@ patrolCmd
       const scheduler = getPatrolScheduler()
       scheduler.start()
       console.log('✅ 定时巡检已启动')
+      process.exit(0)
     } catch (error: any) {
       console.error(`❌ 启动失败: ${error.message}`)
+      process.exit(1)
     }
   })
 
