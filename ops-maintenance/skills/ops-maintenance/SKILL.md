@@ -1,6 +1,6 @@
 ---
 name: ops-maintenance
-version: 3.1.0
+version: 3.2.4
 description: 运维助手 v3.2 - 支持本地、远程、多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控
 userInvocable: true
 argumentHint: <health|security|logs|config|report|perf|ports|process|disk|cluster|alert|patrol|docker-health|ssl|add-server|remove-server|upload|download|list|audit> [args]
@@ -9,11 +9,11 @@ allowedTools:
  - Read
 ---
 
-# 运维助手 (ops-maintenance) v3.1
+# 运维助手 (ops-maintenance) v3.2.4
 
 专业的运维助手，支持单服务器和多服务器集群监控、安全审计、智能日志分析、配置变更追踪、告警通知、定时巡检、Docker容器健康巡检、SSL证书监控。
 
-## v3.1 新功能
+## v3.2 新功能
 
 ### Docker 容器健康巡检
 - **全面巡检**: 自动检查所有容器的健康状况
@@ -85,7 +85,14 @@ ops alert notify email '{"smtpHost":"smtp.qq.com","smtpPort":465,"smtpUser":"xxx
 - **手动触发**: 随时手动执行单个或全部巡检任务
 - **告警联动**: 巡检结果自动评估告警规则并触发通知
 
-## CLI 命令 (v3.1)
+### CLI 命令增强 (v3.2)
+- **告警管理**: `ops alert rules/list/notify/stats/silence/cleanup` — 完整的告警生命周期管理
+- **巡检管理**: `ops patrol list/run/start/stop` — 定时巡检任务的启动/停止/手动触发
+- **邮件通知**: 支持 SMTP 配置 (QQ/163/Gmail/Outlook)，通过 `ops alert notify email <config>` 设置
+- **批量操作**: 支持多服务器并行执行命令，默认5并发
+- **JSON输出**: 所有命令支持 `--json` 选项，便于程序化处理
+
+## CLI 命令 (v3.2)
 
 ```
 ops health              # 系统健康检查
