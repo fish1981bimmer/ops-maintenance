@@ -40,7 +40,7 @@ import {
 } from '../src/index';
 
 // 测试用的服务器配置
-const TEST_SERVER: SSHConfig = {
+const // TEST_SERVER: SSHConfig = {
     host: '192.168.1.100',
     port: 22,
     user: 'root',
