@@ -67,6 +67,17 @@ allowedTools:
 - **告警升级**: 按阈值从高到低，优先触发最高级别
 - **持久化存储**: 告警记录保存在 ~/.config/ops-maintenance/alerts.json
 
+#### 邮件通知配置
+```bash
+# 配置SMTP邮件通知 (QQ邮箱示例)
+ops alert notify email '{"smtpHost":"smtp.qq.com","smtpPort":465,"smtpUser":"xxx@qq.com","smtpPass":"授权码","from":"xxx@qq.com","to":["收件人@qq.com"]}'
+
+# 其他SMTP服务商
+# 163: smtp.163.com:465
+# Gmail: smtp.gmail.com:587
+# Outlook: smtp.office365.com:587
+```
+
 ### 定时巡检调度
 - **自动巡检**: 按配置间隔自动执行 health/disk/memory/load/cpu/service 检查
 - **2种默认任务**: 基础健康巡检(5分钟)、服务状态巡检(1分钟)
